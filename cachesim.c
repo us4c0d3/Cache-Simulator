@@ -18,6 +18,7 @@ int t_hit, t_miss, t_cycle;
 int main(int argc, char* argv[]) {
     int i;
     int cache_size, set_size, block_size;
+    int line, index;
     char* temp;
     char* filename;
 
@@ -49,6 +50,9 @@ int main(int argc, char* argv[]) {
                 break;
         }
     }
+
+    line = cache_size / block_size;
+    index = line / set_size;
 
 
 }
