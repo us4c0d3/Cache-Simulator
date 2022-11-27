@@ -1,6 +1,12 @@
 # Prerequisites
 *.d
 
+*
+
+!*.*
+
+!*/
+
 # Object files
 *.o
 *.ko
@@ -57,9 +63,3 @@ dkms.conf
 test*
 
 cache_simulator/
-
-*
-
-!*.*
-
-!*/
