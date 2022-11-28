@@ -6,10 +6,10 @@ typedef char BYTE;  // 8-bit byte
 typedef int WORD;   // 32-bit word 
 
 struct cache {
-    int tag;
-    int valid;
-    int dirty;
-    int data;
+    WORD tag;
+    WORD valid;
+    WORD dirty;
+    WORD data;
 };
 
 int t_hit, t_miss, t_cycle;
@@ -17,10 +17,16 @@ int t_hit, t_miss, t_cycle;
 
 int main(int argc, char* argv[]) {
     int i;
-    int cache_size, set_size, block_size;
-    int line, index;
     char* temp;
+
+    int lines, index;
+    BYTE cache_size, set_size, block_size;
     char* filename;
+    FILE* fp = NULL;
+
+    WORD mem_addr;
+    char instruction;
+    int data;
 
     /* get parameter */
     for(i = 1; i < argc; ++i) {
@@ -43,7 +49,7 @@ int main(int argc, char* argv[]) {
                 block_size = atoi(temp);
                 //printf("block_size = %d\n", block_size);
                 break;
-            case 'f':   // file_name
+            case 'f':   // filename
                 temp = strtok(argv[i], "=");
                 filename = strtok(NULL, "\0");
                 //printf("filename = %s\n", filename);
@@ -51,8 +57,21 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    line = cache_size / block_size;
-    index = line / set_size;
+    lines = cache_size / block_size; /* 1 line == 1 block */
+    index = lines / set_size;
 
+    fp = fopen(filename, "r");
+    if(fp == NULL) {
+        fprintf(stderr, "file open error");
+        exit(EXIT_FAILURE);
+    }
+
+    while(fscanf(fp, "%x %c", &mem_addr, &instruction) != EOF) {
+        printf("%x %c", mem_addr, instruction);
+        if(instruction == 'W') {
+            fscanf(fp, " %d", &data);
+            printf(" %d", data);
+        }
+    }
 
 }
