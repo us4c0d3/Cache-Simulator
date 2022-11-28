@@ -2,17 +2,28 @@
 #include <stdlib.h>
 #include <memory.h>
 
-typedef char BYTE;  // 8-bit byte
-typedef int WORD;   // 32-bit word 
+typedef unsigned char BYTE;  // 8-bit byte
+typedef unsigned int WORD;   // 32-bit word 
 
 struct cache {
     WORD tag;
-    WORD valid;
-    WORD dirty;
-    WORD data;
+    BYTE valid;
+    BYTE dirty;
+    BYTE offset;
+    int data;
+    int time;
 };
 
 int t_hit, t_miss, t_cycle;
+
+int getOffsetBits(BYTE num) {
+    int count = 0;
+    while(num != 1) {
+        count += 1;
+        num >> 1;
+    }
+    return count;
+}
 
 
 int main(int argc, char* argv[]) {
