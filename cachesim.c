@@ -11,17 +11,11 @@
 typedef unsigned char BYTE;     // 8-bit byte
 typedef unsigned int WORD;      // 32-bit word == 4 byte
 
-#define MALLOC_NODE(p, s) if(!((p) = (nodePointer)malloc(s))) { \
-	fprintf(stderr, "Insufficient Memory"); \
-	exit(EXIT_FAILURE); \
-	}
-#define MALLOC_CACHE(p, s) if(!((p) = (cachePointer)malloc(s))) { \
-	fprintf(stderr, "Insufficient Memory"); \
-	exit(EXIT_FAILURE); \
-	}
+#define MAX(a, b) (((a)>(b))?(a):(b))
+#define MIN(a, b) (((a)<(b))?(a):(b))
 
-typedef struct _node* nodePointer;
-typedef struct cache_line* cachePointer;
+
+///////////////////////////////////////////////////////////////////////////
 
 /* cache structure */
 typedef struct cache_line {
@@ -33,12 +27,44 @@ typedef struct cache_line {
     int time;
 } Cache_line;
 
-/* linked list node for memory */
-typedef struct _node {
-    Cache_line cache;
-    struct _node *next;
-} node;
+/////////////////////////////////////////////////////////////////////////////////
 
+typedef struct _Memory {
+    WORD addr;
+    BYTE data[MAX_WORD_IN_ONE_LINE];
+    struct _Memory* llink;
+    struct _Memory* rlink;
+} MEMORY;
+MEMORY* memory_list;
+
+void insert_node(MEMORY* destnode, MEMORY* newnode) {
+    newnode->llink = destnode;
+    newnode->rlink = destnode->rlink;
+    destnode->rlink->llink = newnode;
+    destnode->rlink = newnode;
+}
+
+MEMORY* find_node(MEMORY* head, WORD addr) {
+    MEMORY* cur;
+    for(cur = head->rlink; cur != head; cur = cur->rlink) {
+        if(cur->addr == addr) {
+            return cur;
+        }
+    }
+
+    return NULL;
+}
+
+MEMORY* get_node(WORD addr, BYTE data[MAX_WORD_IN_ONE_LINE]) {
+    MEMORY* temp;
+    temp = (MEMORY*)malloc(sizeof(*temp));
+    temp->addr = addr;
+    memcpy(temp->data, data, sizeof(temp->data));
+    return temp;
+}
+
+
+////////////////////////////////////////////////////////////////////////////////////////
 
 /* global variables */
 int t_hit, t_miss, t_cycle, t_dirty, t_memory_access;
@@ -46,16 +72,17 @@ Cache_line* cache_lines[MAX_LINE];
 
 
 /* functions */
-void write(WORD mem_addr, int data, BYTE offset_size);
-void read(WORD mem_addr);
+void write(WORD mem_addr, int data, BYTE set_size, BYTE offset_size, BYTE index_bits);
+void read(WORD mem_addr, BYTE set_size, BYTE offset_size, BYTE index_bits);
 int getBitSize(BYTE num);
 int power(int num, int n);
 int getBits(WORD mem_addr, BYTE size);
+void printCache(int lines, int index_size, BYTE block_size, BYTE set_size);
 
-
+/////////////////////////////////////////////////////////////////////////////////////////////
 
 int main(int argc, char* argv[]) {
-    int i;
+    int i, j;
     double miss_rate, average_memory_access_cycle;
     char* temp;
 
@@ -104,6 +131,23 @@ int main(int argc, char* argv[]) {
     index_bits = getBitSize(index_size);
     printf("index_bits = %d\n", index_bits);
 
+    /* init cache */
+    for(i = 0; i < lines; i++) {
+        Cache_line* temp;
+        temp = (Cache_line*)malloc(sizeof(*temp));
+        temp->valid = 0;
+        temp->dirty = 0;
+        temp->time = 0;
+        for(j = 0; j < block_size; j++) {
+            temp->data[j] = 0;
+        }
+        cache_lines[i] = temp;
+    }
+
+    /* init memory */
+    memory_list = (MEMORY*)malloc(sizeof(*memory_list));
+    memory_list->llink = memory_list;
+    memory_list->rlink = memory_list;
 
 
     /* file open */
@@ -125,14 +169,17 @@ int main(int argc, char* argv[]) {
             BYTE index = getBits(mem_addr, index_bits);
             printf("offset = %d, index = %d\n", offset, index);
 
-            write(mem_addr, data, offset_size);
+            //write(mem_addr, data, offset_size);
 
         } else if(inst == 'R') {
 
-            read(mem_addr);
+            read(mem_addr, set_size, offset_size, index_bits);
         }
     }
 
+
+
+    printCache(lines, index_size, block_size, set_size);
 
     /* print total */
     miss_rate = (double)((double)t_miss / (t_hit + t_miss)) * 100;
@@ -145,13 +192,65 @@ int main(int argc, char* argv[]) {
     //printf("average memory access cycle: %.1f\n", )
 }
 
-void write(WORD mem_addr, int data, BYTE offset_size) {
-    
+void write(WORD mem_addr, int data, BYTE set_size, BYTE offset_size, BYTE index_bits) {
+    // BYTE offset = getBits(mem_addr, offset_size);
+    // mem_addr = mem_addr >> offset_size;
+    // BYTE index = getBits(mem_addr, index_bits);
 
     return;
 }
 
-void read(WORD mem_addr) {
+void read(WORD mem_addr, BYTE set_size, BYTE offset_size, BYTE index_bits) {
+    int i;
+    int max_time = -1, idx;
+    MEMORY* mem;
+    WORD addr = mem_addr;
+
+    //BYTE offset = getBits(addr, offset_size);
+    addr = addr >> offset_size;
+    BYTE index = getBits(addr, index_bits);
+    WORD tag = addr >> index_bits;
+
+    for(i = 0; i < set_size; i++) {
+        /* cache_lines[index * set_size + i] */ // index's i-way
+        if(cache_lines[index * set_size + i]->tag == tag) {
+            // hit
+            t_hit += 1;
+            t_cycle += 1;
+            return;
+        }
+    }
+
+    idx = index * set_size;
+    for(i = 0; i < set_size; i++) {
+        // tag 일치 cache 없음(miss)
+        // 각 way의 cache에 저장된 시간을 비교 후 더 오래된 캐시 교체(메모리 접근 -> miss)
+        if(cache_lines[index * set_size + i]->time == 0) {
+            idx = index * set_size + i;
+            break;
+        } else if(max_time < cache_lines[index * set_size + i]->time) {
+            max_time = cache_lines[index * set_size + i]->time;
+            idx = index * set_size + i;
+        }
+    }
+    
+    t_miss += 1;
+    t_cycle += 200;
+    if((mem = find_node(memory_list, addr)) == NULL) {
+        printf("debug idx: %d, t_cycle: %d\n", idx, t_cycle);
+        cache_lines[idx]->time = t_cycle;
+        cache_lines[idx]->valid = 1;
+        t_hit += 1;
+        t_cycle += 1;
+    } else {
+        memcpy(cache_lines[idx]->data, mem->data, sizeof(cache_lines[idx]->data));
+        cache_lines[idx]->time = t_cycle;
+        cache_lines[idx]->valid = 1;
+        cache_lines[idx]->dirty = 0;
+        t_hit += 1;
+        t_cycle += 1;
+    }
+    
     return;
 }
 
@@ -178,3 +277,25 @@ int getBits(WORD mem_addr, BYTE size) {
     }
     return res;
 }
+
+void printCache(int lines, int index_size, BYTE block_size, BYTE set_size) {
+    int i, j;
+    int k = 0;
+    for(i = 0; i < lines; i++) {
+        if(i % set_size == 0) {
+            printf("%d: ", i / set_size);
+        } else {
+            printf("   ");
+        }
+        for(j = block_size - 1; j >= 0; j--) {
+            printf("%02x", cache_lines[i]->data[j % 4 + (4 * k)]);
+            if(j % 4 == 0) {
+                printf(" ");
+                k += 1;
+            }
+        }
+        printf("v:%d d:%d\n", cache_lines[i]->valid, cache_lines[i]->dirty);
+        k = 0;
+    }
+}
+
