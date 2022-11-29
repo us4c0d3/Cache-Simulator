@@ -104,6 +104,9 @@ int main(int argc, char* argv[]) {
     index_bits = getBitSize(index_size);
     printf("index_bits = %d\n", index_bits);
 
+
+
+    /* file open */
     fp = fopen(filename, "r");
     if(fp == NULL) {
         fprintf(stderr, "file open error");
