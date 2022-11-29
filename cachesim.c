@@ -39,14 +39,20 @@ typedef struct _node {
     struct _node *next;
 } node;
 
+
+/* global variables */
 int t_hit, t_miss, t_cycle, t_dirty, t_memory_access;
 Cache_line* cache_lines[MAX_LINE];
 
+
+/* functions */
 void write(WORD mem_addr, int data, BYTE offset_size);
 void read(WORD mem_addr);
 int getBitSize(BYTE num);
 int power(int num, int n);
 int getBits(WORD mem_addr, BYTE size);
+
+
 
 int main(int argc, char* argv[]) {
     int i;
