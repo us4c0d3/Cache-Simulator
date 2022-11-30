@@ -78,6 +78,7 @@ int getBitSize(BYTE num);
 int power(int num, int n);
 int getBits(WORD mem_addr, BYTE size);
 void printCache(int lines, int index_size, BYTE block_size, BYTE set_size);
+WORD getAddressFromCache(Cache_line** cache, BYTE index, BYTE index_bits, BYTE offset_size);
 
 /////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -91,7 +92,7 @@ int main(int argc, char* argv[]) {
     char* filename;
     FILE* fp = NULL;
 
-    WORD mem_addr;
+    WORD mem_addr, temp_addr;
     char inst;
     int data;
 
@@ -102,26 +103,26 @@ int main(int argc, char* argv[]) {
                 temp = strtok(argv[i], "=");
                 temp = strtok(NULL, "\0");
                 cache_size = atoi(temp);
-                printf("cache_size = %d\n", cache_size);
+                // printf("cache_size = %d\n", cache_size);
                 break;
             case 'a':   // set_size
                 temp = strtok(argv[i], "=");
                 temp = strtok(NULL, "\0");
                 set_size = atoi(temp);
-                printf("set_size = %d\n", set_size);
+                // printf("set_size = %d\n", set_size);
                 break;
             case 'b':   // block_size
                 temp = strtok(argv[i], "=");
                 temp = strtok(NULL, "\0");
                 block_size = atoi(temp);
                 offset_size = getBitSize(block_size);
-                printf("block_size = %d\n", block_size);
-                printf("offset_size = %d\n", offset_size);
+                // printf("block_size = %d\n", block_size);
+                // printf("offset_size = %d\n", offset_size);
                 break;
             case 'f':   // filename
                 temp = strtok(argv[i], "=");
                 filename = strtok(NULL, "\0");
-                printf("filename = %s\n", filename);
+                // printf("filename = %s\n", filename);
                 break;
         }
     }
@@ -158,39 +159,53 @@ int main(int argc, char* argv[]) {
     }
 
     while(fscanf(fp, "%x %c", &mem_addr, &inst) != EOF) {
-        //printf("\n%08X %c", mem_addr, inst);
+        // printf("\n%08X %c", mem_addr, inst);
         
         if(inst == 'W') {
             fscanf(fp, " %d", &data);
-            //printf(" %d", data);
-            printf("mem_addr = %08X, ", mem_addr);
-            BYTE offset = getBits(mem_addr, offset_size);
-            mem_addr = mem_addr >> offset_size;
-            BYTE index = getBits(mem_addr, index_bits);
-            printf("offset = %d, index = %d\n", offset, index);
+            // printf(" %d", data);
+            // printf("mem_addr = %08X, ", mem_addr);
+            temp_addr = mem_addr;
+            BYTE offset = getBits(temp_addr, offset_size);
+            temp_addr = temp_addr >> offset_size;
+            BYTE index = getBits(temp_addr, index_bits);
+            temp_addr = temp_addr >> index_bits;
+            WORD tag = getBits(temp_addr, 32 - offset_size - index_bits);
+            // printf("offset = %d, index = %d, tag = %d\n", offset, index, tag);
 
             //write(mem_addr, data, offset_size);
 
         } else if(inst == 'R') {
+            printf("\n\ndebug read: %08X\n", mem_addr);
 
+            /* address to cache */
+            temp_addr = mem_addr;
+            BYTE offset = getBits(temp_addr, offset_size);
+            temp_addr = temp_addr >> offset_size;
+            BYTE index = getBits(temp_addr, index_bits);
+            temp_addr = temp_addr >> index_bits;
+            WORD tag = getBits(temp_addr, 32 - offset_size - index_bits);
+            printf("offset = %d, index = %d, tag = %d\n", offset, index, tag);
             read(mem_addr, set_size, offset_size, index_bits);
         }
     }
 
 
-
     printCache(lines, index_size, block_size, set_size);
 
     /* print total */
-    miss_rate = (double)((double)t_miss / (t_hit + t_miss)) * 100;
-    //average_memory_access_cycle = (double)(memory_access)
+    miss_rate = (double)((double)t_miss / (t_hit + t_miss));
+    average_memory_access_cycle = (double)(t_hit + miss_rate * MISS_PENALTY);
 
     printf("\ntotal number of hits: %d\n", t_hit);
     printf("total number of misses: %d\n", t_miss);
-    printf("miss rate: %.1f%%\n", miss_rate);
+    printf("miss rate: %.1f%%\n", miss_rate * 100);
     printf("total number of dirty blocks: %d\n", t_dirty);
-    //printf("average memory access cycle: %.1f\n", )
+    printf("average memory access cycle: %.1f\n", average_memory_access_cycle);
 }
+
+
+
 
 void write(WORD mem_addr, int data, BYTE set_size, BYTE offset_size, BYTE index_bits) {
     // BYTE offset = getBits(mem_addr, offset_size);
@@ -203,17 +218,21 @@ void write(WORD mem_addr, int data, BYTE set_size, BYTE offset_size, BYTE index_
 void read(WORD mem_addr, BYTE set_size, BYTE offset_size, BYTE index_bits) {
     int i;
     int max_time = -1, idx;
-    MEMORY* mem;
+    MEMORY *mem_to_cache, *cache_to_mem;
     WORD addr = mem_addr;
+    WORD temp_addr;
 
-    //BYTE offset = getBits(addr, offset_size);
+    BYTE offset = getBits(addr, offset_size);
     addr = addr >> offset_size;
     BYTE index = getBits(addr, index_bits);
-    WORD tag = addr >> index_bits;
+    addr = addr >> index_bits;
+    WORD tag = getBits(addr, 32 - offset_size - index_bits);
+    printf("debug in read tag = %d\n", tag);
 
     for(i = 0; i < set_size; i++) {
         /* cache_lines[index * set_size + i] */ // index's i-way
-        if(cache_lines[index * set_size + i]->tag == tag) {
+        if(cache_lines[index * set_size + i]->tag == tag && cache_lines[index * set_size + i]->valid == 1) {
+            printf("debug hit\n");
             // hit
             t_hit += 1;
             t_cycle += 1;
@@ -221,10 +240,12 @@ void read(WORD mem_addr, BYTE set_size, BYTE offset_size, BYTE index_bits) {
         }
     }
 
+
+    // tag 일치 cache 없음(miss)
     idx = index * set_size;
     for(i = 0; i < set_size; i++) {
-        // tag 일치 cache 없음(miss)
         // 각 way의 cache에 저장된 시간을 비교 후 더 오래된 캐시 교체(메모리 접근 -> miss)
+        // cache에 저장된 시간이 0일 경우 캐시가 빈 상태 -> 메모리 접근 필요
         if(cache_lines[index * set_size + i]->time == 0) {
             idx = index * set_size + i;
             break;
@@ -235,22 +256,35 @@ void read(WORD mem_addr, BYTE set_size, BYTE offset_size, BYTE index_bits) {
     }
     
     t_miss += 1;
-    t_cycle += 200;
-    if((mem = find_node(memory_list, addr)) == NULL) {
-        printf("debug idx: %d, t_cycle: %d\n", idx, t_cycle);
-        cache_lines[idx]->time = t_cycle;
-        cache_lines[idx]->valid = 1;
-        t_hit += 1;
-        t_cycle += 1;
-    } else {
-        memcpy(cache_lines[idx]->data, mem->data, sizeof(cache_lines[idx]->data));
-        cache_lines[idx]->time = t_cycle;
-        cache_lines[idx]->valid = 1;
-        cache_lines[idx]->dirty = 0;
-        t_hit += 1;
-        t_cycle += 1;
+    t_cycle += MISS_PENALTY;
+    t_memory_access += 1;
+    if(cache_lines[idx]->dirty == 1) {  // main memory에 write 필요(dirty bit == 1)
+        /* 교체될 cache에서 메모리 주소 가져오기 */
+        temp_addr = getAddressFromCache(&cache_lines[idx], index, index_bits, offset_size);
+
+        if((cache_to_mem = find_node(memory_list, temp_addr)) == NULL) {    // main memory에 해당 주소값 없음 -> 추가
+            MEMORY* newnode;
+            newnode = (MEMORY*)malloc(sizeof(*newnode));
+            newnode->addr = temp_addr;
+            memcpy(newnode->data, cache_lines[idx]->data, sizeof(newnode->data));
+            insert_node(memory_list, newnode);
+        } else {    // main memory에 해당 주소 있음 -> 해당 memory의 data 교체
+            memcpy(cache_to_mem->data, cache_lines[idx]->data, sizeof(cache_to_mem->data));
+        }
     }
     
+
+    cache_lines[idx]->valid = 1;
+    cache_lines[idx]->dirty = 0;
+    cache_lines[idx]->tag = tag;
+    cache_lines[idx]->time = t_cycle;
+    cache_lines[idx]->offset = offset;
+    if((mem_to_cache = find_node(memory_list, addr)) != NULL) { // main memory에 해당 주소값 있음 -> cache에 해당 memory의 data 가져오기
+        memcpy(cache_lines[idx]->data, mem_to_cache->data, sizeof(cache_lines[idx]->data));
+    }
+
+    t_cycle += 1;
+
     return;
 }
 
@@ -287,7 +321,7 @@ void printCache(int lines, int index_size, BYTE block_size, BYTE set_size) {
         } else {
             printf("   ");
         }
-        for(j = block_size - 1; j >= 0; j--) {
+        for(j = block_size - 1; j >= 0; j--) { // print little endian
             printf("%02x", cache_lines[i]->data[j % 4 + (4 * k)]);
             if(j % 4 == 0) {
                 printf(" ");
@@ -299,3 +333,13 @@ void printCache(int lines, int index_size, BYTE block_size, BYTE set_size) {
     }
 }
 
+WORD getAddressFromCache(Cache_line** cache, BYTE index, BYTE index_bits, BYTE offset_size) {
+    WORD addr;
+    WORD temp_tag, temp_index, temp_offset;
+    temp_tag = (*cache)->tag;
+    temp_tag = temp_tag << (index_bits + offset_size);
+    temp_index = (WORD)index << index_bits;
+    temp_offset = (WORD)((*cache)->offset);
+    addr = temp_tag + temp_index + temp_offset;
+    return addr;
+}
