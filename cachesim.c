@@ -1,3 +1,5 @@
+// 2019114545 장우석
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -29,6 +31,7 @@ typedef struct cache_line {
 
 /////////////////////////////////////////////////////////////////////////////////
 
+/* linked list struct */
 typedef struct _Memory {
     WORD addr;
     BYTE data[MAX_WORD_IN_ONE_LINE];
@@ -218,7 +221,6 @@ void write(WORD mem_addr, int data, BYTE set_size, BYTE offset_size, BYTE index_
     }
 
 
-    //TODO: copied from read
     // tag 일치 cache 없음(miss)
     // printf("debug miss\n");
     idx = index * set_size;
