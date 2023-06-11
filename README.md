@@ -1,5 +1,6 @@
 # Cache-Simulator
 2022-2 COMP411 컴퓨터구조 Computer Architecture
+과제 본문 복붙
 
 이 과제에서는 캐시 시뮬레이터의 구현을 통해 캐시의 기본적인 동작을 이해하는 것을 목표로 한다.
 
